@@ -1,0 +1,27 @@
+graph TD
+    A[Start] --> B[Setup: Install Dependencies uv pip install locust];
+    B --> C[Configure: Set Env Vars OR Edit config.py];
+    C --> D{Need Custom Scenarios?};
+    D -- Yes --> E[Edit locustfile.py];
+    D -- No --> F{Choose Run Mode};
+    E --> F;
+
+    F -- Local Single Node --> G[Run Local: locust -f .../locustfile.py];
+    F -- Distributed --> H[Run Master: python .../run_distributed_locust.py --master ...];
+    H --> I[Run Workers: python .../run_distributed_locust.py --worker ...];
+
+    G --> J[Access Locust Web UI];
+    I --> J;
+
+    J --> K[Configure Users and Spawn Rate in UI];
+    K --> L[Start Load Test via UI];
+    L --> M[Test Running: Monitor Locust UI and System Metrics];
+
+    M --> N{Perform Health Check? Optional};
+    N -- Yes --> O[Run Health Check: python .../health_check.py];
+    O --> P[Review Health Status];
+    N -- No --> Q[Analyze Results or Stop Test];
+    P --> Q;
+    M --> Q;
+
+    Q --> R[End];
