@@ -1,0 +1,8 @@
+FROM locustio/locust
+
+# Install required packages
+RUN python -m pip install --no-cache-dir \
+    prometheus_client \
+    psutil  # Often needed for performance monitoring
+
+WORKDIR /locust-tests
