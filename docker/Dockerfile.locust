@@ -5,4 +5,33 @@ RUN python -m pip install --no-cache-dir \
     prometheus_client \
     psutil  # Often needed for performance monitoring
 
-WORKDIR /locust-tests
+# Set working directory
+WORKDIR /locust_load_test
+
+# Copy test files
+COPY . .
+
+# Optional: Copy locust-ssl.conf for HTTPS support (if present)
+# COPY docker/locust-ssl.conf ./locust-ssl.conf
+
+# Expose Locust web UI and master/worker ports
+EXPOSE 8089 5557 5558
+EXPOSE 8443  
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:${LOCUST_WEB_PORT:-8089}/ || exit 1
+
+# Entrypoint script to set defaults if not provided
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Default command (can be overridden by docker-compose)
+CMD ["locust", "-f", "locustfile.py"]
+
+# Notes:
+# - Locust does not serve over HTTPS by default, but you can mount certs for test scripts or a custom web server.
+# - Uncomment COPY locust-ssl.conf and reference certs in your scripts as needed.
+# - See Locust docs for advanced usage and distributed testing.

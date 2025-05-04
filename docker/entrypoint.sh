@@ -1,0 +1,15 @@
+#!/bin/sh
+# Entrypoint for Locust that sets defaults only if not already set by environment or compose
+
+export PYTHONPATH="${PYTHONPATH:-/backend}"
+export LOCUST_WEB_HOST="${LOCUST_WEB_HOST:-0.0.0.0}"
+export LOCUST_WEB_PORT="${LOCUST_WEB_PORT:-8089}"
+export LOCUST_MASTER_PORT="${LOCUST_MASTER_PORT:-5557}"
+export LOCUST_MASTER_PORT_1="${LOCUST_MASTER_PORT_1:-5558}"
+export LOCUST_MASTER_PORT_2="${LOCUST_MASTER_PORT_2:-5559}"
+export LOCUST_WAIT_FOR_WORKERS="${LOCUST_WAIT_FOR_WORKERS:-true}"
+export LOCUST_EXPECT_WORKERS="${LOCUST_EXPECT_WORKERS:-1}"
+export LOCUST_MASTER_HOST="${LOCUST_MASTER_HOST:-locust-master}"
+export LOCUST_WORKER_WAIT_TIMEOUT="${LOCUST_WORKER_WAIT_TIMEOUT:-30}"
+
+exec "$@"
