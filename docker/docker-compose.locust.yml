@@ -1,0 +1,62 @@
+# docker-compose.locust.yml
+version: '3.8'
+
+services:
+  locust-master:
+    # Uses ./backend/app/core/locust_load_test/docker/poetry/Dockerfile.locust
+    build:
+      context: . # Context needs access to the Dockerfile path
+      dockerfile: backend/app/core/locust_load_test/docker/poetry/Dockerfile.locust
+    image: '${DOCKER_IMAGE_LOCUST?Variable not set}-master:${TAG-latest}' # Specific image name
+    volumes:
+      # Mount necessary code/scripts
+      - ./backend/app/core/locust_load_test:/locust_load_test
+      - ./backend:/backend # If locustfile imports from backend code
+    environment:
+      # Keep Locust Master env vars
+      - PYTHONPATH=/backend # If importing from mounted backend code
+      - LOCUST_MODE=master # Explicitly set mode if needed by entrypoint/Dockerfile
+      - LOCUST_WEB_HOST=${LOCUST_WEB_HOST:-0.0.0.0}
+      - LOCUST_WEB_PORT=${LOCUST_WEB_PORT:-8089}
+      - LOCUST_MASTER_BIND_PORT=${LOCUST_MASTER_PORT:-5557} # Port master listens on
+      # Removed LOCUST_MASTER_PORT_1, LOCUST_MASTER_PORT_2 - typically master only needs one range
+      - LOCUST_EXPECT_WORKERS=${LOCUST_EXPECT_WORKERS:-1}
+    ports:
+      # Expose Web UI and Master communication ports
+      - "${LOCUST_WEB_PORT:-8089}:${LOCUST_WEB_PORT:-8089}" # Web UI
+      - "${LOCUST_MASTER_PORT:-5557}:${LOCUST_MASTER_PORT:-5557}" # For workers to connect
+      - "${LOCUST_MASTER_PORT_PLUS_1:-5558}:${LOCUST_MASTER_PORT_PLUS_1:-5558}" # Required by locust for communication
+    working_dir: /locust_load_test
+    command: locust -f locustfile.py --master --master-bind-host=0.0.0.0 --master-bind-port=${LOCUST_MASTER_PORT:-5557} --web-host=${LOCUST_WEB_HOST:-0.0.0.0} --web-port=${LOCUST_WEB_PORT:-8089} --expect-workers=${LOCUST_EXPECT_WORKERS:-1}
+    networks:
+      - default # So workers can find master by service name 'locust-master'
+
+  locust-worker:
+    # Uses same Dockerfile as master
+    build:
+      context: .
+      dockerfile: backend/app/core/locust_load_test/docker/poetry/Dockerfile.locust
+    image: '${DOCKER_IMAGE_LOCUST?Variable not set}-worker:${TAG-latest}' # Specific image name
+    volumes:
+       # Mount necessary code/scripts (same as master)
+      - ./backend/app/core/locust_load_test:/locust_load_test
+      - ./backend:/backend
+    environment:
+      # Keep Locust Worker env vars
+      - PYTHONPATH=/backend
+      - LOCUST_MODE=worker # Explicitly set mode
+      - LOCUST_MASTER_HOST=locust-master # Use service name
+      - LOCUST_MASTER_PORT=${LOCUST_MASTER_PORT:-5557} # Port to connect to master
+      # - LOCUST_WORKER_WAIT_TIMEOUT # If needed
+    depends_on:
+      - locust-master # Needs master to be running
+    working_dir: /locust_load_test
+    # Command scaled via 'docker-compose up --scale locust-worker=N'
+    command: locust -f locustfile.py --worker --master-host=locust-master --master-port=${LOCUST_MASTER_PORT:-5557}
+    networks:
+      - default # To find master
+
+networks:
+  default:
+    driver: bridge # Define locally for this group or declare external if shared
+    # external: true # Uncomment if created elsewhere
