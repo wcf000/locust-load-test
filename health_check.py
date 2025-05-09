@@ -6,7 +6,7 @@ Provides health monitoring for distributed Locust test environments
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing , Optional
 
 import requests
 
@@ -22,7 +22,7 @@ class LocustHealthChecker:
         self.expected_workers = int(os.getenv("EXPECTED_WORKERS", "1"))
         self.last_check = datetime.min
 
-    def _make_request(self, endpoint: str) -> Optional[Dict]:
+    def _make_request(self, endpoint: str) -> dict | None:
         """Helper method for API requests"""
         try:
             response = requests.get(
@@ -36,7 +36,7 @@ class LocustHealthChecker:
             logger.warning(f"Health check request failed: {str(e)}")
             return None
 
-    def check_master_health(self) -> Dict[str, bool]:
+    def check_master_health(self) -> dict[str, bool]:
         """Check if master node is responsive"""
         now = datetime.now()
         if now - self.last_check < timedelta(seconds=1):
@@ -55,7 +55,7 @@ class LocustHealthChecker:
             },
         }
 
-    def check_worker_health(self) -> Dict[str, int]:
+    def check_worker_health(self) -> dict[str, int]:
         """Check worker connectivity"""
         stats = self._make_request("/stats/requests")
         if not stats:
@@ -68,7 +68,7 @@ class LocustHealthChecker:
             "worker_ids": [w["id"] for w in workers],
         }
 
-    def full_health_check(self) -> Dict[str, Dict]:
+    def full_health_check(self) -> dict[str, dict]:
         """Comprehensive health status report"""
         return {
             "master": self.check_master_health(),
