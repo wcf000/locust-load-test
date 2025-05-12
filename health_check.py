@@ -6,7 +6,7 @@ Provides health monitoring for distributed Locust test environments
 import logging
 import os
 from datetime import datetime, timedelta
-from typing , Optional
+from typing  Optional
 
 import requests
 

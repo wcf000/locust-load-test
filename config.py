@@ -23,7 +23,3 @@ class LocustConfig:
         """Base URL for the API under test."""
         return os.getenv("BASE_URL", "http://localhost:8000")
 
-# Use Prometheus settings directly from Settings wherever needed:
-# Settings.PROMETHEUS_ENABLED
-# Settings.PROMETHEUS_PORT
-# Settings.PROMETHEUS_SERVICE_URL
