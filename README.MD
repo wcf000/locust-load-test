@@ -43,16 +43,69 @@ CopyInsert
 LOCUST_MASTER_HOST = "localhost"  # For distributed tests
 LOCUST_MASTER_PORT = 8089        # Web UI port
 BASE_URL = "http://localhost:8000"  # Target system
-File Structure
-CopyInsert
+## 📁 Folder Structure & Conventions
+
+```
 locust_load_test/
-├── _tests/
-│   ├── locust_performance.py   # Main test scenarios
-│   └── run_distributed_locust.py  # Distributed test runner
-├── config.py                  # Test configuration
-├── health_check.py            # Node monitoring
-└── README.md                  # This file
-Best Practices
+├── _docs/           # Markdown docs, best practices, diagrams, usage
+├── _tests/          # Unit/integration tests for all core logic
+├── config.py        # Singleton config (class-based, imports from global settings)
+├── docker/          # Dockerfile, docker-compose, provisioning config, env
+├── models/          # Pydantic models or test data schemas
+├── exceptions/      # Custom exceptions for load testing
+├── <core>.py        # Main implementation (health_check.py, locustfile.py, etc.)
+├── README.md        # Main readme (this file)
+```
+
+- **_docs/**: All documentation, diagrams, and best practices for this module.
+- **_tests/**: All tests for this module, including performance, smoke, and distributed tests.
+- **config.py**: Singleton config pattern, imports from global settings, exposes all constants for this module.
+- **docker/**: Containerization assets (Dockerfile, docker-compose, provisioning configs, .env.example, etc).
+- **models/**: Pydantic models or test data schemas for input/output validation.
+- **exceptions/**: Custom exception classes for robust error handling.
+- **<core>.py**: Main implementation modules (e.g., health_check.py, locustfile.py, etc).
+
+---
+
+## 🏗️ Singleton & Config Pattern
+- Use a single class (e.g., `LocustConfig`) in `config.py` to centralize all env, test, and integration settings.
+- Import from global settings to avoid duplication and ensure DRY config.
+- Document all config keys in `_docs/usage.md` and in this README.
+
+---
+
+## 📄 Documentation & Testing
+- Place all best practices, diagrams, and usage guides in `_docs/`.
+- All tests (unit, integration, smoke, distributed) go in `_tests/` with clear naming.
+- Use `_tests/_docs/` for test-specific docs if needed.
+
+---
+
+## 🐳 Docker & Distributed Testing
+- Place Dockerfile(s), docker-compose, and provisioning configs in `docker/`.
+- Provide `.env.example` for local/dev/prod setups.
+- Use distributed mode for production-like load tests.
+
+---
+
+## 📝 Repeatable Prompt/Template for Future Folders
+
+```
+@[<path/to/new_service>] create readme for this folder and suite @[<path/to/new_service/_tests/_docs/alerts.md>]@[<path/to/new_service/_tests/_docs/docker.md>]@[<path/to/new_service/_tests/_docs/infra.md>]@[<path/to/new_service/_tests/_docs/README.md>]  add it to the root, add docker folder, docs folder, tests etc and give me a prompt so I can repeat this action for future folders with the same structure. Include singleton structure and config.
+```
+
+- Replace `<path/to/new_service>` with your actual folder path.
+- This will scaffold:
+  - `README.md` (main)
+  - `config.py` (singleton config)
+  - `_docs/` (docs, best practices)
+  - `_tests/` (tests)
+  - `docker/` (container/provisioning)
+  - `models/` (schemas)
+  - `exceptions/` (custom errors)
+  - Main implementation modules
+
+---
 Start with small user counts (10-50) and gradually increase
 Use @task decorators to organize test scenarios
 Monitor both Locust metrics and system resources
