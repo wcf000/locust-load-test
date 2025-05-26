@@ -86,26 +86,7 @@ locust_load_test/
 - Provide `.env.example` for local/dev/prod setups.
 - Use distributed mode for production-like load tests.
 
----
 
-## 📝 Repeatable Prompt/Template for Future Folders
-
-```
-@[<path/to/new_service>] create readme for this folder and suite @[<path/to/new_service/_tests/_docs/alerts.md>]@[<path/to/new_service/_tests/_docs/docker.md>]@[<path/to/new_service/_tests/_docs/infra.md>]@[<path/to/new_service/_tests/_docs/README.md>]  add it to the root, add docker folder, docs folder, tests etc and give me a prompt so I can repeat this action for future folders with the same structure. Include singleton structure and config.
-```
-
-- Replace `<path/to/new_service>` with your actual folder path.
-- This will scaffold:
-  - `README.md` (main)
-  - `config.py` (singleton config)
-  - `_docs/` (docs, best practices)
-  - `_tests/` (tests)
-  - `docker/` (container/provisioning)
-  - `models/` (schemas)
-  - `exceptions/` (custom errors)
-  - Main implementation modules
-
----
 Start with small user counts (10-50) and gradually increase
 Use @task decorators to organize test scenarios
 Monitor both Locust metrics and system resources
