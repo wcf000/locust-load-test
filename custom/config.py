@@ -6,7 +6,7 @@ import os
 from typing import Dict, Any
 
 # Base URL for the FastAPI application
-BASE_URL = os.getenv("BASE_URL", "http://full-stack-fastapi-template-bvfx.onrender.com")
+BASE_URL = os.getenv("BASE_URL", "https://full-stack-fastapi-template-bvfx.onrender.com")
 
 # Authentication credentials for testing protected endpoints
 TEST_USER_EMAIL = os.getenv("TEST_USER_EMAIL", "test@example.com")

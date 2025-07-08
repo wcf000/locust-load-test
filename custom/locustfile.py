@@ -24,6 +24,7 @@ from app.core.locust_load_test.custom.config import (
     TEST_ITEM_DATA,
     ENDPOINTS,
     TASK_WEIGHTS,
+    BASE_URL,  # Import BASE_URL for the target server
 )
 
 # Import logging
@@ -55,6 +56,8 @@ class FastAPIUser(HttpUser):
     Includes authentication and interaction with various endpoints.
     Uses IP spoofing to bypass rate limiting.
     """
+    # Define the target host for HTTP requests
+    host = BASE_URL
     
     # Wait time between tasks
     wait_time = between(LOCUST_WAIT_TIME_MIN, LOCUST_WAIT_TIME_MAX)
@@ -93,21 +96,13 @@ class FastAPIUser(HttpUser):
     def on_start(self):
         """
         Execute login at the start of each simulated user session
-        Initialize IP spoofing and authentication
+        Initialize authentication
         """
         # Initialize locks if not already done
         if FastAPIUser._lock is None:
             FastAPIUser._lock = threading.RLock()
             
-        if FastAPIUser._ip_lock is None:
-            FastAPIUser._ip_lock = threading.RLock()
-            # Generate the IP pool when first user starts
-            self._generate_ip_pool()
-        
-        # Create a personal IP pool for this user and assign initial IP
-        self._create_user_ip_pool()
-        self._assign_random_ip()
-        logger.info(f"User initialized with IP: {self._user_ip}")
+        logger.info("User initialized")
             
         # Try to get an existing token from the pool first
         if self._get_token_from_pool():
@@ -264,11 +259,8 @@ class FastAPIUser(HttpUser):
     def login(self):
         """
         Authenticate with the API and store the access token.
-        Uses IP spoofing to bypass rate limiting with improved IP rotation.
         """
-        # Always rotate IP for login attempts to maximize distribution
-        self._assign_random_ip()
-        logger.info(f"Login attempt using IP: {self._user_ip}")
+        logger.info(f"Login attempt without IP spoofing")
         
         # Check if we need to throttle logins across all users (minimal throttling)
         with FastAPIUser._lock:
@@ -285,13 +277,15 @@ class FastAPIUser(HttpUser):
             FastAPIUser._login_attempts += 1
         
         login_data = {
+            "grant_type": "password",
             "username": TEST_USER_EMAIL,
             "password": TEST_USER_PASSWORD,
         }
         
-        # Set headers with X-Forwarded-For for IP spoofing
-        headers = self._get_ip_spoofing_headers()
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        # Use simple headers without IP spoofing to start
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
         
         # Use adaptive backoff for retries with less delay
         success = False
@@ -304,10 +298,12 @@ class FastAPIUser(HttpUser):
                 name="Login"
             ) as response:
                 if response.status_code == 200:
+                    response.success()
+                    # record token
                     try:
                         data = response.json()
                         self.access_token = data["access_token"]
-                        logger.info(f"Successfully logged in with IP {self._user_ip}. Token: {self.access_token[:10]}...")
+                        logger.info(f"Successfully logged in. Token: {self.access_token[:10]}...")
                         
                         # Add token to shared pool
                         self._add_token_to_pool(self.access_token)
@@ -323,39 +319,28 @@ class FastAPIUser(HttpUser):
                         logger.error(f"Failed to parse login response: {e}")
                         response.failure(f"Failed to parse login response: {e}")
                 elif response.status_code == 429:
-                    # Rate limited - rotate IP and retry with less backoff
-                    old_ip = self._user_ip
-                    self._assign_random_ip()
-                    
+                    # Rate limited - back off and retry
                     # Adaptive backoff - shorter at first, then longer
                     if attempt == 1:
                         backoff_time = 0.5 + random.uniform(0, 0.3)
                     else:
                         backoff_time = min(2, 0.5 * attempt) + random.uniform(0, 1)
                     
-                    logger.warning(f"Login rate limited. Rotating IP from {old_ip} to {self._user_ip} and backing off for {backoff_time:.2f}s")
+                    logger.warning(f"Login rate limited. Backing off for {backoff_time:.2f}s")
                     
                     # We don't want to count rate limits as failures since we're handling them
-                    # Mark as success without a message parameter
                     response.success()
-                    
-                    # Update headers with new IP
-                    headers = self._get_ip_spoofing_headers()
-                    headers["Content-Type"] = "application/x-www-form-urlencoded"
                     
                     # If not the last attempt, wait before retrying with reduced backoff
                     if attempt < self.MAX_LOGIN_RETRIES:
                         time.sleep(backoff_time)
                 else:
-                    logger.warning(f"Login failed (attempt {attempt}/{self.MAX_LOGIN_RETRIES}): Status {response.status_code}")
+                    logger.warning(f"Login failed (attempt {attempt}/{self.MAX_LOGIN_RETRIES}): Status {response.status_code}, Response: {response.text}")
                     response.failure(f"Login failed with status code: {response.status_code}")
                     
-                    # If not the last attempt, wait before retrying with a different IP
+                    # If not the last attempt, wait before retrying
                     if attempt < self.MAX_LOGIN_RETRIES:
-                        self._assign_random_ip()
-                        logger.info(f"Retrying login with new IP {self._user_ip} in {self.MIN_RETRY_DELAY/2} seconds...")
-                        headers = self._get_ip_spoofing_headers()
-                        headers["Content-Type"] = "application/x-www-form-urlencoded"
+                        logger.info(f"Retrying login in {self.MIN_RETRY_DELAY/2} seconds...")
                         time.sleep(self.MIN_RETRY_DELAY/2)  # Reduced delay
         
         # Before giving up, check if a token has appeared in the pool while we were trying
@@ -373,7 +358,7 @@ class FastAPIUser(HttpUser):
     
     def get_auth_headers(self) -> Dict[str, str]:
         """
-        Return headers with authorization token and spoofed IP address.
+        Return headers with authorization token.
         Tries to get a valid token from the pool first, then tries login if needed.
         Returns None if unable to obtain a valid token.
         """
@@ -391,19 +376,11 @@ class FastAPIUser(HttpUser):
                         logger.error("Cannot get auth headers: No valid token available")
                         return None
         
-        # Occasionally rotate IP between requests to look more distributed
-        if random.random() < 0.1:  # 10% chance to rotate IP
-            self._assign_random_ip()
-            logger.debug(f"Rotated IP for authenticated request: {self._user_ip}")
-        
-        # Get standard IP spoofing headers
-        headers = self._get_ip_spoofing_headers()
-        
-        # Add authorization
-        headers.update({
+        # Simple headers without IP spoofing
+        headers = {
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
-        })
+        }
         
         return headers
     
@@ -424,11 +401,9 @@ class FastAPIUser(HttpUser):
     @task(TASK_WEIGHTS["login"])
     def login_task(self):
         """
-        Test login endpoint explicitly with IP rotation to bypass rate limiting
+        Test login endpoint explicitly
         """
-        # Always rotate IP for explicit login tasks
-        self._assign_random_ip()
-        logger.info(f"Login task using IP: {self._user_ip}")
+        logger.info("Login task without IP spoofing")
         
         # Skip if we already have a valid token and token pool has enough tokens
         with FastAPIUser._lock:
@@ -446,20 +421,16 @@ class FastAPIUser(HttpUser):
                     logger.info("Skipping login task due to high login attempt rate")
                     return
         
-        # Try to login with our spoofed IP
+        # Try to login
         self.login()
 
     @task(TASK_WEIGHTS["health_check"])
     def health_check(self):
         """
-        Test the health check endpoint with IP spoofing
+        Test the health check endpoint
         """
-        # Get IP spoofing headers
-        headers = self._get_ip_spoofing_headers()
-        
         with self.client.get(
             "/api/v1/health",
-            headers=headers,
             name="Health Check",
             catch_response=True
         ) as response:
@@ -476,12 +447,6 @@ class FastAPIUser(HttpUser):
                     # Some health checks might not return JSON
                     logger.info("Health check completed (no JSON)")
                     response.success()
-            elif response.status_code == 429:
-                # Rate limited - rotate IP and mark as success since we're handling it
-                self._assign_random_ip()
-                logger.warning(f"Health check rate limited. Rotating IP to {self._user_ip}")
-                # Mark as success without a message parameter
-                response.success()
             else:
                 response.failure(f"Health check failed with status code: {response.status_code}")
     
