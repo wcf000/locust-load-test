@@ -1,6 +1,14 @@
 """
 Custom FastAPI load test script using Locust.
 Tests various endpoints of the FastAPI application.
+
+OPTIMIZATIONS FOR FREE-TIER SERVERS:
+- Reduced user count (max 10 concurrent users)
+- Increased wait times between tasks (3-12 seconds)
+- Gentler ramp-up over longer periods
+- Conservative retry logic with longer backoffs
+- Reduced token pool and IP pool sizes
+- Less frequent task execution
 """
 
 import json
@@ -34,12 +42,14 @@ logger = logging.getLogger(__name__)
 
 class StepLoadShape(LoadTestShape):
     """
-    Step load shape: ramp up users in defined stages for realistic load testing.
+    Step load shape: gentle ramp up for free-tier server testing.
+    Optimized for Render free-tier limitations.
     """
     stages = [
-        {"duration": 60, "users": 20, "spawn_rate": 5},   # ramp to 20 users over 60s
-        {"duration": 120, "users": 50, "spawn_rate": 5},  # ramp to 50 users over 120s
-        {"duration": 180, "users": 100, "spawn_rate": 5}, # ramp to 100 users over 180s
+        {"duration": 120, "users": 3, "spawn_rate": 1},   # ramp to 3 users over 2 minutes
+        {"duration": 300, "users": 5, "spawn_rate": 1},   # ramp to 5 users over 5 minutes
+        {"duration": 600, "users": 8, "spawn_rate": 1},   # ramp to 8 users over 10 minutes
+        {"duration": 900, "users": 10, "spawn_rate": 1},  # ramp to 10 users over 15 minutes (max)
     ]
 
     def tick(self):
@@ -59,18 +69,18 @@ class FastAPIUser(HttpUser):
     # Define the target host for HTTP requests
     host = BASE_URL
     
-    # Wait time between tasks
-    wait_time = between(LOCUST_WAIT_TIME_MIN, LOCUST_WAIT_TIME_MAX)
+    # Wait time between tasks - increased for free-tier servers
+    wait_time = between(LOCUST_WAIT_TIME_MIN * 3, LOCUST_WAIT_TIME_MAX * 4)  # 3-12 seconds between tasks
     
     # User state variables
     access_token: Optional[str] = None
     user_id: Optional[str] = None
     items: list = []
     
-    # Login retry configuration
-    MAX_LOGIN_RETRIES = 3
-    MIN_RETRY_DELAY = 2  # seconds
-    MAX_RETRY_DELAY = 10  # seconds
+    # Login retry configuration - more conservative for free-tier
+    MAX_LOGIN_RETRIES = 2
+    MIN_RETRY_DELAY = 5  # seconds - increased delay
+    MAX_RETRY_DELAY = 15  # seconds - increased delay
     
     # Class-level tracking for rate limiting
     _last_login_time = 0
@@ -81,11 +91,11 @@ class FastAPIUser(HttpUser):
     _token_usage_count = {}  # Track how many times each token is used
     _lock = None  # Will be initialized in on_start
     
-    # IP spoofing configuration
+    # IP spoofing configuration - reduced for lighter load
     _ip_pool = []  # Pool of IPs to use for spoofing
     _ip_index = 0  # Current index in the IP pool
     _ip_lock = None  # Lock for IP pool access
-    _ip_pool_size = 500  # Increased IP pool size for better distribution
+    _ip_pool_size = 50  # Reduced IP pool size for lighter load
     _ip_rotation_count = 0  # Track how many times IPs have been rotated
     
     # Per-user IP tracking
@@ -229,10 +239,10 @@ class FastAPIUser(HttpUser):
                 return True
             return False
     
-    def _add_token_to_pool(self, token, max_pool_size=15):
+    def _add_token_to_pool(self, token, max_pool_size=8):  # Reduced pool size for free-tier
         """
         Add a token to the shared pool for other users
-        Increased pool size and better management
+        Reduced pool size for free-tier server efficiency
         """
         with FastAPIUser._lock:
             # Don't add duplicate tokens
@@ -262,14 +272,14 @@ class FastAPIUser(HttpUser):
         """
         logger.info(f"Login attempt without IP spoofing")
         
-        # Check if we need to throttle logins across all users (minimal throttling)
+        # Check if we need to throttle logins across all users (increased throttling for free-tier)
         with FastAPIUser._lock:
             current_time = time.time()
-            # If less than 0.3 second since last login attempt by any user, wait
+            # If less than 2 seconds since last login attempt by any user, wait
             time_since_last_login = current_time - FastAPIUser._last_login_time
-            if time_since_last_login < 0.3:
-                wait_time = 0.3 - time_since_last_login + random.uniform(0, 0.2)
-                logger.info(f"Minimal rate limiting, waiting {wait_time:.2f}s before login")
+            if time_since_last_login < 2.0:
+                wait_time = 2.0 - time_since_last_login + random.uniform(0, 1.0)
+                logger.info(f"Free-tier rate limiting, waiting {wait_time:.2f}s before login")
                 time.sleep(wait_time)
             
             # Update class-level tracking
@@ -319,29 +329,28 @@ class FastAPIUser(HttpUser):
                         logger.error(f"Failed to parse login response: {e}")
                         response.failure(f"Failed to parse login response: {e}")
                 elif response.status_code == 429:
-                    # Rate limited - back off and retry
-                    # Adaptive backoff - shorter at first, then longer
+                    # Rate limited - back off and retry with longer delays for free-tier
                     if attempt == 1:
-                        backoff_time = 0.5 + random.uniform(0, 0.3)
+                        backoff_time = 3.0 + random.uniform(0, 2.0)  # 3-5 seconds
                     else:
-                        backoff_time = min(2, 0.5 * attempt) + random.uniform(0, 1)
+                        backoff_time = min(15, 3.0 * attempt) + random.uniform(0, 3.0)  # Up to 15 seconds
                     
                     logger.warning(f"Login rate limited. Backing off for {backoff_time:.2f}s")
                     
                     # We don't want to count rate limits as failures since we're handling them
                     response.success()
                     
-                    # If not the last attempt, wait before retrying with reduced backoff
+                    # If not the last attempt, wait before retrying with increased backoff
                     if attempt < self.MAX_LOGIN_RETRIES:
                         time.sleep(backoff_time)
                 else:
                     logger.warning(f"Login failed (attempt {attempt}/{self.MAX_LOGIN_RETRIES}): Status {response.status_code}, Response: {response.text}")
                     response.failure(f"Login failed with status code: {response.status_code}")
                     
-                    # If not the last attempt, wait before retrying
+                    # If not the last attempt, wait before retrying with longer delay for free-tier
                     if attempt < self.MAX_LOGIN_RETRIES:
-                        logger.info(f"Retrying login in {self.MIN_RETRY_DELAY/2} seconds...")
-                        time.sleep(self.MIN_RETRY_DELAY/2)  # Reduced delay
+                        logger.info(f"Retrying login in {self.MIN_RETRY_DELAY} seconds...")
+                        time.sleep(self.MIN_RETRY_DELAY)  # Use full delay for free-tier
         
         # Before giving up, check if a token has appeared in the pool while we were trying
         if not success and self._get_token_from_pool():
@@ -407,17 +416,17 @@ class FastAPIUser(HttpUser):
         
         # Skip if we already have a valid token and token pool has enough tokens
         with FastAPIUser._lock:
-            if self.access_token and len(FastAPIUser._shared_tokens) >= 5:
-                if random.random() < 0.7:  # 70% chance to skip if we already have tokens
+            if self.access_token and len(FastAPIUser._shared_tokens) >= 3:  # Reduced threshold for free-tier
+                if random.random() < 0.8:  # 80% chance to skip if we already have tokens
                     logger.info("Skipping login_task: Already have tokens")
                     return
                     
-            # Minimal throttling
-            if FastAPIUser._login_attempts > 30:  # Higher threshold
+            # More conservative throttling for free-tier
+            if FastAPIUser._login_attempts > 10:  # Lower threshold for free-tier
                 # Reset counter periodically
-                if time.time() - FastAPIUser._last_login_time > 60:
+                if time.time() - FastAPIUser._last_login_time > 120:  # Longer reset period
                     FastAPIUser._login_attempts = 0
-                elif random.random() < 0.3:  # 30% chance to skip if high login rate
+                elif random.random() < 0.6:  # 60% chance to skip if high login rate
                     logger.info("Skipping login task due to high login attempt rate")
                     return
         
@@ -636,7 +645,8 @@ def on_test_start(environment, **kwargs):
     """
     Execute when the load test starts
     """
-    logger.info("Starting FastAPI load test with distributed IP spoofing")
+    logger.info("Starting FastAPI load test optimized for free-tier servers")
+    logger.info("Configuration: Max 10 users, 3-12s wait times, gentle ramp-up")
 
 
 @events.test_stop.add_listener
@@ -678,14 +688,16 @@ def on_test_stop(environment, **kwargs):
 def on_locust_init(environment, **kwargs):
     """
     Initialize any background tasks before the test starts
+    Reduced reporting frequency for free-tier optimization
     """
-    # Report token pool status every 30 seconds
+    # Report token pool status every 60 seconds (reduced from 30)
     if environment.runner:
         gevent.spawn(report_token_pool_stats, environment)
         
 def report_token_pool_stats(environment):
     """
     Periodically report on token pool status
+    Less frequent reporting for free-tier servers
     """
     while True:
         if hasattr(FastAPIUser, '_shared_tokens'):
@@ -693,7 +705,7 @@ def report_token_pool_stats(environment):
             ip_rotations = getattr(FastAPIUser, '_ip_rotation_count', 0)
             login_attempts = getattr(FastAPIUser, '_login_attempts', 0)
             logger.info(f"Token pool status: {token_count} tokens available, {ip_rotations} IP rotations, {login_attempts} login attempts")
-        gevent.sleep(30)
+        gevent.sleep(60)  # Report every 60 seconds instead of 30
     
 
 if __name__ == "__main__":
